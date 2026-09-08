@@ -378,6 +378,25 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+with st.expander("Sobre este TFM y este agente", expanded=True):
+    st.markdown(
+        "Este Trabajo de Fin de Máster estudia el impacto de comunicaciones públicas "
+        "(Donald Trump, Elon Musk, la Reserva Federal) sobre 6 activos financieros: "
+        "**IXIC, XLE, TSLA, GSPC, ETH-USD y BTC-USD**. El capítulo 6 demuestra que esa "
+        "relación es real pero **modesta, heterogénea entre activos y depende del modelo "
+        "usado** — por eso este agente no intenta predecir el mercado, sino dar acceso "
+        "conversacional a la evidencia ya calculada, y permitir explorar la sensibilidad "
+        "del modelo ante comunicados nuevos.\n\n"
+        "**Puedes preguntarle 4 tipos de cosas:**\n\n"
+        "- Resultados ya calculados (predicción de hoy, variables importantes, robustez...)\n"
+        "- Simular un comunicado nuevo sobre uno de los 6 activos\n"
+        "- Consultar un día histórico concreto dentro del horizonte de estudio\n"
+        "- Ver la evolución del precio de un activo\n\n"
+        "Los botones de \"Preguntas rápidas\", más abajo, son un buen punto de partida si "
+        "no sabes por dónde empezar."
+    )
+
 st.divider()
 
 with st.sidebar:
@@ -497,6 +516,23 @@ with col_chat:
         if not conversacion["historial"]:
             st.info("Empieza escribiendo una pregunta abajo, o usa uno de los botones de preguntas rápidas.")
 
+        # Selector de activo, solo cuando el agente está esperando el activo
+        # para una simulación de comunicado — evita tener que escribir el
+        # nombre del activo a mano, con riesgo de errores tipográficos.
+        pendiente = conversacion.get("pendiente")
+        if pendiente and pendiente.get("tipo") == "simulacion" and pendiente.get("ticker") is None:
+            col_select, col_boton = st.columns([3, 1])
+            with col_select:
+                activo_elegido = st.selectbox(
+                    "Elige el activo del comunicado", ACTIVOS_CON_EVIDENCIA,
+                    key=f"selector_activo_{st.session_state.conversacion_activa}",
+                    label_visibility="collapsed",
+                )
+            with col_boton:
+                if st.button("Usar este activo", use_container_width=True):
+                    _enviar_mensaje(activo_elegido)
+                    st.rerun()
+
         # Botones de acceso rápido: siempre visibles, no solo al principio, para
         # poder lanzar una pregunta rápida en cualquier punto de la conversación.
         st.divider()
@@ -524,7 +560,7 @@ with col_chat:
             _enviar_mensaje(mensaje_usuario)
             st.rerun()
 
-    with st.expander("Fuentes de datos y metodología"):
+    with st.expander("Fuentes de datos, metodología y enlaces"):
         st.markdown(
             "**Cómo funciona este agente**\n\n"
             "Este agente audita la evidencia ya generada por el TFM — no predice el mercado. "
@@ -544,7 +580,10 @@ with col_chat:
             "- `informe_comparacion_modelos.csv` — comparación de modelos baseline (sección 6.1)\n"
             "- `informe_cv_temporal.csv` — validación cruzada temporal (sección 7)\n"
             "- `modelo_evento_importante.pkl` — modelo LightGBM serializado\n"
-            "- `twitter_roberta_finetuned.zip` — modelo de sentimiento fine-tuned (capítulo 4)"
+            "- `twitter_roberta_finetuned.zip` — modelo de sentimiento fine-tuned (capítulo 4)\n\n"
+            "**Código fuente completo**\n\n"
+            "[github.com/therealkoki/TFM-PRODUCCION](https://github.com/therealkoki/TFM-PRODUCCION) "
+            "— pipeline de producción y código de este agente."
         )
 
 st.divider()
