@@ -36,6 +36,14 @@ PALABRAS_SIMULACION = [
     "analiza este tuit", "analiza este tweet", "analiza este comunicado",
     "acaba de publicar", "acaba de decir", "acaba de tuitear",
     "nuevo tuit", "nuevo tweet", "nuevo comunicado",
+    # Variantes de "haz una predicción a partir de ESTE texto concreto" — se
+    # exige "este/esta" junto a predicción/predice, para no confundirse con
+    # "¿qué predice hoy el modelo?" (que es una pregunta distinta, sobre el
+    # dato ya calculado por el pipeline, no una simulación de texto nuevo).
+    "predicción de este", "predicción de esta", "predice este", "predice esta",
+    "predicción basada en este", "predicción basada en esta",
+    "predicción para este", "predicción para esta",
+    "predicción de ese", "predicción de esa", "predice ese", "predice esa",
 ]
 
 # Para "evolución del precio" se exige una palabra de evolución/movimiento Y
