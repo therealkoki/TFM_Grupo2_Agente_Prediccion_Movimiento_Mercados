@@ -27,10 +27,10 @@ from googleapiclient.http import MediaIoBaseDownload
 
 DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 
-RUTA_BASE = ["TFM DATA SCIENCE", "data"]
-CARPETA_MODELADO = RUTA_BASE + ["PROCESSED - Modelado"]
-CARPETA_IMPACTO_MERCADOS = RUTA_BASE + ["PROCESSED - Impacto Mercados"]
-CARPETA_MODELO_SENTIMIENTO = RUTA_BASE + ["MODELS - Analisis Semantico"]
+RUTA_BASE = ["Grupo 2_Predicción_Movimientos_Mercado_&_Comunicaciones_Públicas", "03. data"]
+CARPETA_MODELADO = RUTA_BASE + ["08. PROCESSED - Modelado"]
+CARPETA_IMPACTO_MERCADOS = RUTA_BASE + ["07. PROCESSED - Impacto Mercados"]
+CARPETA_MODELO_SENTIMIENTO = RUTA_BASE + ["06. MODELS - Analisis Semantico"]
 
 # Variables sobre las que se comprueba si las condiciones de mercado del día
 # de una simulación están dentro de lo que el modelo vio durante el
