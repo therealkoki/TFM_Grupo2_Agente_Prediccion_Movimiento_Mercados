@@ -193,9 +193,16 @@ def hay_senal_de_tema_nuevo(mensaje: str, tipo_pendiente: str) -> bool:
     if es_saludo(mensaje) or es_cortesia_cierre(mensaje):
         return True
     texto = mensaje.lower()
-    if tipo_pendiente != "simulacion" and any(palabra in texto for palabra in PALABRAS_SIMULACION):
+    es_simulacion_nueva = (
+        any(palabra in texto for palabra in PALABRAS_SIMULACION)
+        or es_simulacion_combinada(mensaje)
+        or tiene_estructura_de_comunicado(mensaje)
+    )
+    if tipo_pendiente != "simulacion" and es_simulacion_nueva:
         return True
     if tipo_pendiente != "consulta_historica" and any(palabra in texto for palabra in PALABRAS_CONSULTA_HISTORICA):
+        return True
+    if tipo_pendiente != "evolucion_precio" and es_pregunta_evolucion_precio(mensaje):
         return True
     if detectar_tema_pregunta_datos(mensaje) is not None:
         return True
