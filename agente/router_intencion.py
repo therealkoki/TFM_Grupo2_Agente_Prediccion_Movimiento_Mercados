@@ -33,18 +33,76 @@ ALIAS_ACTIVOS = {
 PALABRAS_SIMULACION = [
     "simula", "simular", "simulación", "simulacion",
     "qué pasaría si", "que pasaria si", "hipotético", "hipotetico",
-    "analiza este tuit", "analiza este tweet", "analiza este comunicado",
     "acaba de publicar", "acaba de decir", "acaba de tuitear",
     "nuevo tuit", "nuevo tweet", "nuevo comunicado",
-    # Variantes de "haz una predicción a partir de ESTE texto concreto" — se
-    # exige "este/esta" junto a predicción/predice, para no confundirse con
-    # "¿qué predice hoy el modelo?" (que es una pregunta distinta, sobre el
-    # dato ya calculado por el pipeline, no una simulación de texto nuevo).
-    "predicción de este", "predicción de esta", "predice este", "predice esta",
-    "predicción basada en este", "predicción basada en esta",
-    "predicción para este", "predicción para esta",
-    "predicción de ese", "predicción de esa", "predice ese", "predice esa",
 ]
+
+# Detección general de "analiza/simula/predice + algo que suena a comunicado" —
+# en vez de exigir una frase exacta de una lista cerrada (que nunca cubre
+# todas las formas de pedir lo mismo en lenguaje natural), se combinan dos
+# listas: un verbo de análisis y un sustantivo de comunicación, en cualquier
+# orden y redacción. Así "Analiza la siguiente publicación: ..." se reconoce
+# igual que "Simula este comunicado...", sin tener que anticipar la frase
+# exacta.
+VERBOS_ANALISIS_SIMULACION = [
+    "analiza", "analizar", "simula", "simular", "predice", "predicción de", "prediccion de",
+    "haz la predicción", "haz la prediccion", "evalúa", "evalua", "evaluar",
+    "interpreta", "interpretar", "revisa", "revisar", "examina", "examinar",
+    "valora", "valorar", "impacto de", "afecta",
+    "reaccion", "repercu", "influ",
+    "estudia", "considera", "supon", "imagin", "modela",
+]
+SUSTANTIVOS_COMUNICACION = [
+    "comunicado", "tuit", "tweet", "publicación", "publicacion", "mensaje",
+    "texto", "post", "declaración", "declaracion", "noticia", "artículo",
+    "articulo", "titular", "frase", "anuncio", "discurso", "rumor",
+    "comentario", "cita",
+]
+
+
+def es_simulacion_combinada(mensaje: str) -> bool:
+    texto = mensaje.lower()
+    tiene_verbo = any(v in texto for v in VERBOS_ANALISIS_SIMULACION)
+    tiene_sustantivo = any(s in texto for s in SUSTANTIVOS_COMUNICACION)
+    return tiene_verbo and tiene_sustantivo
+
+
+def tiene_estructura_de_comunicado(mensaje: str) -> bool:
+    """
+    Señal estructural, independiente de qué verbo o sustantivo se use (o de
+    si no se usa ninguno de los que ya conocemos): si el mensaje trae un
+    texto identificable como comunicado (entrecomillado, o tras ':') Y
+    menciona uno de los 6 activos, es casi con toda seguridad una petición
+    de simular ese texto — sea cual sea la forma exacta en que se pidió.
+    Con esto, incluso un mensaje sin ningún verbo reconocido (p. ej. "TSLA:
+    'récord de entregas este trimestre'") se clasifica correctamente.
+
+    Excepción importante: si el propio texto extraído es, en sí mismo, una
+    pregunta (p. ej. "GSPC: ¿qué tal está yendo?"), NO se activa — eso no es
+    un comunicado a analizar, es solo una pregunta con el activo por delante.
+    """
+    texto_extraido = extraer_texto_comunicado(mensaje)
+    if texto_extraido is None or len(texto_extraido) < 15:
+        return False
+    if detectar_ticker(mensaje) is None:
+        return False
+
+    texto_lower = texto_extraido.lower().strip()
+    palabras_pregunta = ("qué", "que ", "cómo", "como ", "cuál", "cual ",
+                          "por qué", "por que", "cuánto", "cuanto ", "cuándo", "cuando ")
+    # Igual que con las preguntas: si el texto extraído es, en realidad, una
+    # petición dirigida al propio agente (no algo que "dijo" un comunicado),
+    # tampoco se activa — "cuéntame...", "explícame...", "resume..." no son
+    # comunicados a analizar, son instrucciones para el asistente.
+    peticiones_al_agente = ("cuéntame", "cuentame", "dime", "explícame", "explicame",
+                            "resume", "resúmeme", "resumeme", "detalla", "ayúdame", "ayudame",
+                            "cuenta ", "explica ")
+    if ("?" in texto_extraido
+            or texto_lower.startswith(palabras_pregunta)
+            or texto_lower.startswith(peticiones_al_agente)):
+        return False
+
+    return True
 
 # Para "evolución del precio" se exige una palabra de evolución/movimiento Y
 # una de precio/cotización a la vez — así "evolución de la probabilidad" o
@@ -346,8 +404,13 @@ def clasificar_mensaje(mensaje: str) -> dict:
     texto = mensaje.lower()
     ticker = detectar_ticker(mensaje)
 
-    es_simulacion = any(palabra in texto for palabra in PALABRAS_SIMULACION)
-    if es_simulacion:
+    # Las señales EXPLÍCITAS de simulación (frases fijas, o verbo+sustantivo)
+    # se comprueban primero, ya que son intencionadas y específicas.
+    es_simulacion_explicita = (
+        any(palabra in texto for palabra in PALABRAS_SIMULACION)
+        or es_simulacion_combinada(mensaje)
+    )
+    if es_simulacion_explicita:
         return {
             "tipo": "simulacion",
             "ticker": ticker,
@@ -369,9 +432,32 @@ def clasificar_mensaje(mensaje: str) -> dict:
             "ticker": ticker,
         }
 
+    tema = detectar_tema_pregunta_datos(mensaje)
+    if tema is not None:
+        return {
+            "tipo": "pregunta_datos",
+            "ticker": ticker,
+            "tema": tema,
+            "activo_no_soportado": detectar_activo_no_soportado(mensaje),
+        }
+
+    # Último recurso: solo si NINGUNA categoría más específica reconoció el
+    # mensaje, se prueba la señal estructural (activo + texto entrecomillado
+    # o tras ':') — así nunca le "roba el turno" a una pregunta sobre datos,
+    # una consulta histórica o una evolución de precio que use ese mismo
+    # patrón de escritura de pasada (p. ej. "Evolución de TSLA: 2025-01-01 a
+    # 2025-06-30" ya se resolvió arriba como evolucion_precio, y nunca llega
+    # hasta aquí).
+    if tiene_estructura_de_comunicado(mensaje):
+        return {
+            "tipo": "simulacion",
+            "ticker": ticker,
+            "texto_comunicado": extraer_texto_comunicado(mensaje),
+        }
+
     return {
         "tipo": "pregunta_datos",
         "ticker": ticker,
-        "tema": detectar_tema_pregunta_datos(mensaje),
+        "tema": None,
         "activo_no_soportado": detectar_activo_no_soportado(mensaje),
     }
