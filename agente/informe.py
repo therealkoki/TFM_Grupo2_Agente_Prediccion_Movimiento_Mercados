@@ -27,6 +27,8 @@ from docx import Document
 from docx.shared import Cm, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
+from router_intencion import ACTIVOS_CON_EVIDENCIA
+
 GEMINI_MODEL = "gemini-flash-latest"
 TIMEOUT_GEMINI_SEGUNDOS = 20
 
@@ -198,12 +200,45 @@ Contenido original (extraído de la conversación con el agente):
 Redacta el texto de esta sección del informe."""
 
 
+def _texto_seccion_parece_generico(respuesta: str, contenido_bruto: str) -> bool:
+    """
+    Comprobación de seguridad, equivalente a la que ya existe en
+    respuestas.py para el chat: si la redacción combinada de Gemini para una
+    sección del informe no menciona ni un solo ticker ni un solo número
+    concreto de los que aparecen en el contenido real, es probable que haya
+    ignorado ese contenido y generado algo genérico — se descarta y se usa
+    la plantilla de reserva (el propio texto ya validado del chat) en su
+    lugar.
+
+    Se comprueba con tickers/números, no con palabras sueltas: probamos antes
+    con palabras significativas y dio falsos positivos, porque palabras como
+    "sentimiento" o "comunicado" son vocabulario que se repite en casi
+    cualquier respuesta de este agente, no contenido realmente distintivo.
+    """
+    tickers_en_fuente = [t for t in ACTIVOS_CON_EVIDENCIA if t.lower() in contenido_bruto.lower()]
+    numeros_en_fuente = set(re.findall(r"\d+[.,]?\d*%?", contenido_bruto))
+
+    if not tickers_en_fuente and not numeros_en_fuente:
+        return False  # no hay ningún dato concreto que comprobar; se acepta la respuesta
+
+    respuesta_lower = respuesta.lower()
+    ticker_coincide = any(t.lower() in respuesta_lower for t in tickers_en_fuente)
+    numero_coincide = any(n in respuesta for n in numeros_en_fuente)
+
+    return not (ticker_coincide or numero_coincide)
+
+
 def _texto_seccion(titulo_seccion: str, intercambios: list) -> str:
     """Devuelve el texto ya redactado (Gemini, o plantilla de reserva) para
     una sección, a partir de todos los intercambios de esa categoría."""
     contenido_bruto = "\n\n---\n\n".join(_quitar_html(texto) for texto, _ in intercambios)
     try:
-        return _llamar_gemini(_prompt_seccion(titulo_seccion, contenido_bruto))
+        respuesta = _llamar_gemini(_prompt_seccion(titulo_seccion, contenido_bruto))
+        if _texto_seccion_parece_generico(respuesta, contenido_bruto):
+            _log(f"[informe.py] Redacción de Gemini descartada para '{titulo_seccion}': "
+                 f"no comparte contenido distintivo con el original.")
+            return None
+        return respuesta
     except Exception:
         return None  # None indica "usar la plantilla de reserva" (ver generar_informe_docx)
 
