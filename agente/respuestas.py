@@ -19,6 +19,7 @@ y no se puede dar por garantizada de antemano.
 """
 
 import os
+import re
 
 import pandas as pd
 
@@ -613,10 +614,30 @@ def generar_respuesta_consulta_historica(resultado: dict):
     return texto, grafico
 
 
+def _respuesta_gemini_ignora_comunicado(respuesta: str, texto_original: str) -> bool:
+    """
+    Comprobación de seguridad: a veces Gemini, en vez de redactar la
+    respuesta pedida, se limita a devolver un eco de las etiquetas de datos
+    del prompt (p. ej. "TSLA / Sentimiento: neutral / Probabilidad antes:
+    ..."), sin mencionar el contenido real del comunicado analizado. Se
+    detecta comprobando si ninguna palabra significativa (4+ letras) del
+    texto original aparece en la respuesta — en ese caso, se descarta la
+    respuesta de Gemini y se usa la plantilla de reserva, que siempre
+    incluye el texto real.
+    """
+    palabras_clave = [p for p in re.findall(r"\w+", texto_original.lower()) if len(p) >= 4]
+    if not palabras_clave:
+        return False  # texto demasiado corto para poder comprobar nada; se acepta la respuesta
+    respuesta_lower = respuesta.lower()
+    return not any(palabra in respuesta_lower for palabra in palabras_clave)
+
+
 def generar_respuesta_simulacion(resultado: dict):
     """Devuelve (texto, grafico_o_none)."""
     try:
         texto = _llamar_gemini(_prompt_simulacion(resultado))
+        if _respuesta_gemini_ignora_comunicado(texto, resultado["texto_original"]):
+            raise RuntimeError("Gemini no mencionó el contenido real del comunicado analizado.")
     except Exception:
         s = resultado["sentimiento"]
         aviso_distribucion = resultado.get("aviso_distribucion")
