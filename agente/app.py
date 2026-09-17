@@ -26,6 +26,7 @@ from carga_datos import ACTIVOS_CON_EVIDENCIA, cargar_modelo_sentimiento, cargar
 import informe
 from informe import generar_informe_docx, hay_contenido_exportable
 from respuestas import (
+    generar_grafico_simulacion_multiple,
     generar_respuesta_consulta_historica,
     generar_respuesta_evolucion_precio,
     generar_respuesta_pregunta_datos,
@@ -155,7 +156,7 @@ def _ejecutar_simulacion_multiple(texto: str, tickers: list, datos: dict, otros_
         tokenizer, modelo_sentimiento = cargar_modelo_sentimiento()
 
     bloques = []
-    primer_grafico = None
+    resultados_por_activo = []
     for ticker in tickers:
         try:
             resultado = analizar_comunicado_nuevo(
@@ -171,10 +172,15 @@ def _ejecutar_simulacion_multiple(texto: str, tickers: list, datos: dict, otros_
             bloques.append(f"### {ticker}\n\n{e}")
             continue
 
-        texto_resultado, grafico = generar_respuesta_simulacion(resultado)
-        if primer_grafico is None:
-            primer_grafico = grafico
+        texto_resultado, _ = generar_respuesta_simulacion(resultado)
+        resultados_por_activo.append(resultado)
         bloques.append(f"### {ticker}\n\n{texto_resultado}")
+
+    # Un único gráfico comparativo (antes/después por activo), en vez de
+    # quedarnos solo con el del primer activo — así se ven todos a la vez.
+    grafico_comparativo = (
+        generar_grafico_simulacion_multiple(resultados_por_activo) if resultados_por_activo else None
+    )
 
     texto_final = (
         f"He analizado el mismo comunicado para **{len(tickers)} activos** — el texto es igual "
@@ -191,7 +197,7 @@ def _ejecutar_simulacion_multiple(texto: str, tickers: list, datos: dict, otros_
         )
         texto_final = aviso_otro_activo + "\n\n" + texto_final
 
-    return texto_final, primer_grafico, "simulacion"
+    return texto_final, grafico_comparativo, "simulacion"
 
 
 def _debe_abandonar_pendiente(mensaje_usuario: str, pendiente: dict) -> bool:
