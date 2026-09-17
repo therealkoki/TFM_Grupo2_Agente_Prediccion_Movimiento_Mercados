@@ -496,6 +496,8 @@ def generar_respuesta_evolucion_precio(ticker: str, datos: dict, fecha_inicio: s
 
     try:
         texto = _llamar_gemini(_prompt_evolucion_precio(ticker, stats))
+        if ticker.lower() not in texto.lower():
+            raise RuntimeError("Gemini no mencionó el activo real consultado.")
     except Exception:
         signo = "subido" if stats["variacion_pct"] >= 0 else "bajado"
         texto = (
@@ -580,10 +582,23 @@ def generar_respuesta_pregunta_datos(mensaje_usuario: str, clasificacion: dict, 
     return _con_cita_fuente(respuesta, tema), grafico
 
 
+def _respuesta_gemini_ignora_datos_historicos(respuesta: str, resultado: dict) -> bool:
+    """Comprobación equivalente a la de simulación: si Gemini no menciona ni
+    el activo ni la fecha consultada, probablemente ignoró los datos reales."""
+    respuesta_lower = respuesta.lower()
+    if resultado["ticker"].lower() not in respuesta_lower:
+        return True
+    if resultado["fecha"] not in respuesta:
+        return True
+    return False
+
+
 def generar_respuesta_consulta_historica(resultado: dict):
     """Devuelve (texto, grafico_o_none)."""
     try:
         texto = _llamar_gemini(_prompt_consulta_historica(resultado))
+        if _respuesta_gemini_ignora_datos_historicos(texto, resultado):
+            raise RuntimeError("Gemini no mencionó el activo o la fecha reales consultados.")
     except Exception:
         if resultado["evento_importante_real"]:
             intro = (
