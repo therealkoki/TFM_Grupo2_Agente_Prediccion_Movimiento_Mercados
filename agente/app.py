@@ -578,7 +578,7 @@ with col_chat:
             "- `modelo_evento_importante.pkl` — modelo LightGBM serializado\n"
             "- `twitter_roberta_finetuned.zip` — modelo de sentimiento fine-tuned (capítulo 4)\n\n"
             "**Código fuente completo**\n\n"
-            "[github.com/therealkoki/TFM-PRODUCCION](https://github.com/therealkoki/TFM-PRODUCCION) "
+            "[github.com/therealkoki/TFM_Grupo2_Agente_Prediccion_Movimiento_Mercados](https://github.com/therealkoki/TFM_Grupo2_Agente_Prediccion_Movimiento_Mercados) "
             "— pipeline de producción y código de este agente."
         )
 
