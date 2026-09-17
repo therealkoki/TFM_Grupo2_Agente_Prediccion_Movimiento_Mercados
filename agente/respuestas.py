@@ -674,6 +674,17 @@ def _respuesta_gemini_ignora_comunicado(respuesta: str, texto_original: str) -> 
     return not any(palabra in respuesta_lower for palabra in palabras_clave)
 
 
+def generar_grafico_simulacion_multiple(resultados: list):
+    """Gráfico comparativo (antes/después por activo) para cuando un mismo
+    comunicado se simula sobre varios activos a la vez. Devuelve None si
+    falla la construcción del gráfico, sin que eso rompa el resto de la
+    respuesta (igual que el resto de gráficos del agente)."""
+    try:
+        return graficos.grafico_simulacion_comparativa(resultados)
+    except Exception:
+        return None
+
+
 def generar_respuesta_simulacion(resultado: dict):
     """Devuelve (texto, grafico_o_none)."""
     try:
