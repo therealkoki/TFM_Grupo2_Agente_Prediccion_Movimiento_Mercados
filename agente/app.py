@@ -92,7 +92,7 @@ def _ejecutar_evolucion_precio(ticker: str, datos: dict, fecha_inicio: str = Non
     return texto, grafico, "evolucion_precio"
 
 
-def _ejecutar_simulacion(texto: str, ticker: str, datos: dict):
+def _ejecutar_simulacion(texto: str, ticker: str, datos: dict, otros_activos_no_soportados: list = None):
     if datos.get("modelo_info") is None:
         return ("No puedo simular ahora mismo: el modelo predictivo (`modelo_evento_importante.pkl`) "
                 "no está disponible en Drive todavía."), None, None
@@ -117,7 +117,81 @@ def _ejecutar_simulacion(texto: str, ticker: str, datos: dict):
         return str(e), None, None
 
     texto_respuesta, grafico = generar_respuesta_simulacion(resultado)
+
+    # Si el mensaje mencionaba, además del activo soportado, otro que no lo
+    # está (p. ej. "Simula este comunicado sobre Apple y Tesla..."), se avisa
+    # explícitamente de que solo se ha tenido en cuenta el activo soportado
+    # — en vez de dejar la impresión silenciosa de que también se consideró
+    # el otro.
+    if otros_activos_no_soportados:
+        nombres = ", ".join(n.capitalize() for n in otros_activos_no_soportados)
+        plural = len(otros_activos_no_soportados) > 1
+        aviso_otro_activo = (
+            f"{nombres} no {'son activos soportados' if plural else 'es un activo soportado'} en este "
+            f"TFM — esta simulación se ha calculado únicamente para **{ticker}**."
+        )
+        texto_respuesta = aviso_otro_activo + "\n\n" + texto_respuesta
+
     return texto_respuesta, grafico, "simulacion"
+
+
+def _ejecutar_simulacion_multiple(texto: str, tickers: list, datos: dict, otros_activos_no_soportados: list = None):
+    """
+    Cuando un mismo comunicado menciona varios activos soportados a la vez
+    (p. ej. "Simula este comunicado sobre GSPC y TSLA: ..."), en vez de
+    quedarnos con uno solo se analiza para cada uno por separado, y se
+    combinan los resultados en una única respuesta — el texto del comunicado
+    es el mismo para todos, pero la predicción cambia porque las condiciones
+    de mercado de cada activo son distintas.
+    """
+    if datos.get("modelo_info") is None:
+        return ("No puedo simular ahora mismo: el modelo predictivo (`modelo_evento_importante.pkl`) "
+                "no está disponible en Drive todavía."), None, None
+    if datos.get("dataset_consolidado_05") is None:
+        return ("No puedo simular ahora mismo: `dataset_consolidado_05.csv` "
+                "(condiciones de mercado actuales) no está disponible en Drive todavía."), None, None
+
+    with st.spinner("Cargando el modelo de sentimiento (puede tardar unos segundos la primera vez)..."):
+        tokenizer, modelo_sentimiento = cargar_modelo_sentimiento()
+
+    bloques = []
+    primer_grafico = None
+    for ticker in tickers:
+        try:
+            resultado = analizar_comunicado_nuevo(
+                texto=texto,
+                ticker=ticker,
+                dataset_consolidado_05=datos["dataset_consolidado_05"],
+                tokenizer=tokenizer,
+                modelo=modelo_sentimiento,
+                modelo_info=datos["modelo_info"],
+                rangos_entrenamiento=datos.get("rangos_entrenamiento", {}),
+            )
+        except ValueError as e:
+            bloques.append(f"### {ticker}\n\n{e}")
+            continue
+
+        texto_resultado, grafico = generar_respuesta_simulacion(resultado)
+        if primer_grafico is None:
+            primer_grafico = grafico
+        bloques.append(f"### {ticker}\n\n{texto_resultado}")
+
+    texto_final = (
+        f"He analizado el mismo comunicado para **{len(tickers)} activos** — el texto es igual "
+        f"para todos, pero la predicción cambia porque las condiciones de mercado de cada uno "
+        f"son distintas:\n\n" + "\n\n---\n\n".join(bloques)
+    )
+
+    if otros_activos_no_soportados:
+        nombres = ", ".join(n.capitalize() for n in otros_activos_no_soportados)
+        plural = len(otros_activos_no_soportados) > 1
+        aviso_otro_activo = (
+            f"{nombres} no {'son activos soportados' if plural else 'es un activo soportado'} en este "
+            f"TFM — no {'se han incluido' if plural else 'se ha incluido'} en este análisis."
+        )
+        texto_final = aviso_otro_activo + "\n\n" + texto_final
+
+    return texto_final, primer_grafico, "simulacion"
 
 
 def _debe_abandonar_pendiente(mensaje_usuario: str, pendiente: dict) -> bool:
@@ -170,7 +244,10 @@ def _procesar_mensaje(mensaje_usuario: str, datos: dict, conversacion: dict):
 
         if pendiente.get("texto_comunicado") and pendiente.get("ticker"):
             conversacion["pendiente"] = None
-            return _ejecutar_simulacion(pendiente["texto_comunicado"], pendiente["ticker"], datos)
+            return _ejecutar_simulacion(
+                pendiente["texto_comunicado"], pendiente["ticker"], datos,
+                pendiente.get("otros_activos_no_soportados"),
+            )
 
         if pendiente.get("ticker") is None:
             conversacion["pendiente"] = pendiente
@@ -250,15 +327,20 @@ def _procesar_mensaje(mensaje_usuario: str, datos: dict, conversacion: dict):
 
     if clasificacion["tipo"] == "simulacion":
         ticker = clasificacion["ticker"]
+        tickers = clasificacion.get("tickers") or ([ticker] if ticker else [])
         texto = clasificacion["texto_comunicado"]
+        otros_activos_no_soportados = clasificacion.get("otros_activos_no_soportados")
 
-        if texto and ticker:
-            return _ejecutar_simulacion(texto, ticker, datos)
+        if texto and tickers:
+            if len(tickers) > 1:
+                return _ejecutar_simulacion_multiple(texto, tickers, datos, otros_activos_no_soportados)
+            return _ejecutar_simulacion(texto, tickers[0], datos, otros_activos_no_soportados)
 
         conversacion["pendiente"] = {
             "tipo": "simulacion",
             "ticker": ticker,
             "texto_comunicado": texto,
+            "otros_activos_no_soportados": otros_activos_no_soportados,
         }
         if texto is None:
             return "¿Cuál es el texto del comunicado que quieres analizar?", None, None
