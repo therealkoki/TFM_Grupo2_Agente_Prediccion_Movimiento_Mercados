@@ -582,13 +582,40 @@ def generar_respuesta_pregunta_datos(mensaje_usuario: str, clasificacion: dict, 
     return _con_cita_fuente(respuesta, tema), grafico
 
 
+MESES_ES_NUMERO_A_NOMBRE = [
+    "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+]
+
+
+def _fecha_aparece_en_texto(fecha_iso: str, texto: str) -> bool:
+    """
+    Comprueba si la fecha aparece en el texto, en formato ISO (2025-04-09) o
+    en formato natural en español (9 de abril de 2025) — Gemini, al escribir
+    de forma natural como se le pide, casi siempre reformatea la fecha, así
+    que exigir el formato ISO exacto rechazaría por error casi cualquier
+    respuesta bien escrita, solo por no repetir la fecha tal cual.
+    """
+    if fecha_iso in texto:
+        return True
+    try:
+        anio, mes, dia = fecha_iso.split("-")
+        nombre_mes = MESES_ES_NUMERO_A_NOMBRE[int(mes) - 1]
+    except (ValueError, IndexError):
+        return False
+    texto_lower = texto.lower()
+    dia_aparece = str(int(dia)) in texto_lower or dia in texto_lower
+    return dia_aparece and nombre_mes in texto_lower and anio in texto
+
+
 def _respuesta_gemini_ignora_datos_historicos(respuesta: str, resultado: dict) -> bool:
     """Comprobación equivalente a la de simulación: si Gemini no menciona ni
-    el activo ni la fecha consultada, probablemente ignoró los datos reales."""
+    el activo ni la fecha consultada (en cualquiera de sus dos formatos
+    posibles), probablemente ignoró los datos reales."""
     respuesta_lower = respuesta.lower()
     if resultado["ticker"].lower() not in respuesta_lower:
         return True
-    if resultado["fecha"] not in respuesta:
+    if not _fecha_aparece_en_texto(resultado["fecha"], respuesta):
         return True
     return False
 
