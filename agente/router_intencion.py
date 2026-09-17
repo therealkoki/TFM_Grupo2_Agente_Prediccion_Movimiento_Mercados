@@ -222,16 +222,65 @@ def detectar_activo_no_soportado(mensaje: str) -> str | None:
     return None
 
 
-def detectar_ticker(mensaje: str) -> str | None:
-    """Busca un ticker o alias conocido en el mensaje. Devuelve el ticker exacto o None."""
+def detectar_otros_activos_no_soportados(mensaje: str) -> list:
+    """
+    A diferencia de detectar_activo_no_soportado() (que solo se fija en este
+    caso cuando NO hay NINGÚN activo soportado en el mensaje), esta función
+    detecta activos/empresas no soportados mencionados JUNTO a uno que sí lo
+    es — p. ej. "Simula este comunicado sobre Apple y Tesla: ...", donde
+    Tesla sí está soportado pero Apple se coló sin que nadie avisara. Se usa
+    para que la simulación aclare explícitamente que solo se ha tenido en
+    cuenta el activo soportado, en vez de dar la impresión silenciosa de que
+    también se consideró el otro.
+    """
     texto = mensaje.lower()
+    return [nombre for nombre in ACTIVOS_NO_SOPORTADOS_COMUNES if nombre in texto]
+
+
+def detectar_ticker(mensaje: str) -> str | None:
+    """
+    Busca todos los tickers/alias conocidos presentes en el mensaje, y
+    devuelve el que aparece PRIMERO en el propio texto — no el primero según
+    el orden interno de ACTIVOS_CON_EVIDENCIA, que es arbitrario y no tiene
+    por qué coincidir con la intención real del usuario. Antes, en un mensaje
+    como "Simula sobre GSPC y TSLA...", se devolvía siempre TSLA (por ir
+    antes en la lista interna), aunque el usuario hubiera escrito GSPC primero.
+    """
+    texto = mensaje.lower()
+    candidatos = []
     for ticker in ACTIVOS_CON_EVIDENCIA:
-        if ticker.lower() in texto:
-            return ticker
+        posicion = texto.find(ticker.lower())
+        if posicion != -1:
+            candidatos.append((posicion, ticker))
     for alias, ticker in ALIAS_ACTIVOS.items():
-        if alias in texto:
-            return ticker
-    return None
+        posicion = texto.find(alias)
+        if posicion != -1:
+            candidatos.append((posicion, ticker))
+    if not candidatos:
+        return None
+    candidatos.sort(key=lambda par: par[0])
+    return candidatos[0][1]
+
+
+def detectar_todos_los_tickers_soportados(mensaje: str) -> list:
+    """
+    A diferencia de detectar_ticker() (que devuelve solo el primero), esta
+    función devuelve TODOS los activos soportados mencionados en el mensaje,
+    sin duplicados, en el orden en que aparecen — se usa para simulaciones
+    que mencionan varios activos a la vez, para dar un resultado por cada uno
+    en vez de descartar todos menos uno.
+    """
+    texto = mensaje.lower()
+    primera_posicion = {}
+    for ticker in ACTIVOS_CON_EVIDENCIA:
+        p = texto.find(ticker.lower())
+        if p != -1 and (ticker not in primera_posicion or p < primera_posicion[ticker]):
+            primera_posicion[ticker] = p
+    for alias, ticker in ALIAS_ACTIVOS.items():
+        p = texto.find(alias)
+        if p != -1 and (ticker not in primera_posicion or p < primera_posicion[ticker]):
+            primera_posicion[ticker] = p
+    return [ticker for ticker, _ in sorted(primera_posicion.items(), key=lambda par: par[1])]
 
 
 def extraer_texto_comunicado(mensaje: str) -> str | None:
@@ -421,7 +470,9 @@ def clasificar_mensaje(mensaje: str) -> dict:
         return {
             "tipo": "simulacion",
             "ticker": ticker,
+            "tickers": detectar_todos_los_tickers_soportados(mensaje),
             "texto_comunicado": extraer_texto_comunicado(mensaje),
+            "otros_activos_no_soportados": detectar_otros_activos_no_soportados(mensaje),
         }
 
     fecha = detectar_fecha(mensaje)
@@ -459,7 +510,9 @@ def clasificar_mensaje(mensaje: str) -> dict:
         return {
             "tipo": "simulacion",
             "ticker": ticker,
+            "tickers": detectar_todos_los_tickers_soportados(mensaje),
             "texto_comunicado": extraer_texto_comunicado(mensaje),
+            "otros_activos_no_soportados": detectar_otros_activos_no_soportados(mensaje),
         }
 
     return {
