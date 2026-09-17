@@ -126,6 +126,36 @@ def grafico_simulacion(resultado: dict) -> go.Figure:
     return fig
 
 
+def grafico_simulacion_comparativa(resultados: list) -> go.Figure:
+    """
+    Cuando un mismo comunicado se simula para varios activos a la vez, en vez
+    de un gráfico distinto por cada uno, se muestra uno solo: una barra
+    "antes" y otra "después" por cada activo, agrupadas, para comparar de
+    un vistazo cómo cambia la probabilidad en cada uno con el mismo texto.
+    """
+    tickers = [r["ticker"] for r in resultados]
+    antes = [r["prediccion_antes"]["probabilidad"] for r in resultados]
+    despues = [r["prediccion_despues"]["probabilidad"] for r in resultados]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        name="Antes", x=tickers, y=antes, marker_color=COLOR_TENUE,
+        text=[f"{v:.1%}" for v in antes], textposition="outside",
+    ))
+    fig.add_trace(go.Bar(
+        name="Después", x=tickers, y=despues, marker_color=COLOR_ACENTO,
+        text=[f"{v:.1%}" for v in despues], textposition="outside",
+    ))
+    fig.update_layout(
+        **{**LAYOUT_BASE, "showlegend": True, "height": 320},
+        barmode="group",
+        title="Comparación de la simulación por activo",
+        yaxis=dict(tickformat=".1%", gridcolor=COLOR_CUADRICULA),
+        xaxis=dict(gridcolor=COLOR_CUADRICULA),
+    )
+    return fig
+
+
 def calcular_serie_evolucion_precio(dataset_consolidado_05: pd.DataFrame, ticker: str,
                                      fecha_inicio: str = None, fecha_fin: str = None) -> pd.DataFrame:
     """
